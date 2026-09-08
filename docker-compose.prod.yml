@@ -1,0 +1,32 @@
+version: "3.8"
+
+# Production control plane only. Real agents run separately, one per VPS —
+# see README.md "Going to production" for the one-line agent command.
+#
+# Usage:
+#   cp .env.example .env   # fill in ADMIN_PASSWORD etc.
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      REDIS_ADDR: redis:6379
+
+volumes:
+  redis-data:

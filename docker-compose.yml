@@ -1,0 +1,70 @@
+version: "3.8"
+
+# Quick start for trying Witness locally:
+#   docker compose up --build
+# Then open http://localhost:8080 (admin / changeme) and http://localhost:8080/status
+#
+# The three agents here are just Docker containers on your own machine, not
+# real geographic regions — they exist to demonstrate the consensus logic.
+# See README.md "Going to production" for wiring up real VPS agents.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
+    environment:
+      REDIS_ADDR: redis:6379
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: changeme
+      SEED_AGENT_TOKENS: "frankfurt-demo:demo-token-fra,singapore-demo:demo-token-sin,ny-demo:demo-token-ny"
+      SEED_DEMO_CHECKS: "1"
+      # TELEGRAM_BOT_TOKEN: ""
+      # TELEGRAM_CHAT_ID: ""
+
+  agent-frankfurt:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    depends_on:
+      - server
+    environment:
+      SERVER_URL: http://server:8080
+      AGENT_TOKEN: demo-token-fra
+      POLL_INTERVAL: 15s
+
+  agent-singapore:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    depends_on:
+      - server
+    environment:
+      SERVER_URL: http://server:8080
+      AGENT_TOKEN: demo-token-sin
+      POLL_INTERVAL: 15s
+
+  agent-ny:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    depends_on:
+      - server
+    environment:
+      SERVER_URL: http://server:8080
+      AGENT_TOKEN: demo-token-ny
+      POLL_INTERVAL: 15s
+
+volumes:
+  redis-data:
