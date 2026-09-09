@@ -39,6 +39,19 @@ func New(st *store.Store) *Aggregator {
 	}
 }
 
+// currentLang reads the live language setting from Redis (set from the
+// dashboard toggle), so a language change takes effect on the very next
+// alert without restarting the server — same pattern as the Telegram
+// token/chat_id, which are also read fresh on every send rather than
+// cached at startup.
+func (a *Aggregator) currentLang(ctx context.Context) string {
+	lang, _ := a.st.GetSetting(ctx, "ui_lang")
+	if lang != "en" && lang != "ru" {
+		return "en"
+	}
+	return lang
+}
+
 // newConsumerName gives each server process a unique identity within the
 // Redis consumer group. Without this, running two server instances (e.g.
 // for HA) would have them both claim the name "aggregator-1" — Redis would
@@ -146,62 +159,63 @@ func (a *Aggregator) sendTransitionAlert(ctx context.Context, checkID, prev, ove
 	}
 	name = html.EscapeString(name)
 
-	emoji, headline := statusHeadline(prev, overall)
+	lang := a.currentLang(ctx)
+	emoji, headline := statusHeadline(lang, prev, overall)
 
 	now := time.Now()
 	var regionLines strings.Builder
 	for _, r := range regions {
 		mark := "🟢"
-		note := "доступен"
+		note := msg(lang, "region_up")
 		switch {
 		case consensus.IsStale(r, now):
-			mark, note = "⚪️", "нет данных"
+			mark, note = "⚪️", msg(lang, "region_nodata")
 		case !r.Up:
-			mark, note = "🔴", "недоступен"
+			mark, note = "🔴", msg(lang, "region_down")
 		}
 		fmt.Fprintf(&regionLines, "\n%s <code>%s</code> — %s", mark, html.EscapeString(r.Region), note)
 	}
 
-	msg := fmt.Sprintf("%s <b>%s</b>\n%s (%d/%d регионов подтверждают)%s",
-		emoji, name, headline, upCount, total, regionLines.String())
+	fullMsg := emoji + " <b>" + name + "</b>\n" + fmt.Sprintf(msg(lang, "regions_confirm_fmt"), headline, upCount, total, regionLines.String())
 
-	if err := notifier.Send(msg); err != nil {
+	if err := notifier.Send(fullMsg); err != nil {
 		log.Printf("aggregator: telegram send failed: %v", err)
 	}
 }
 
-// statusHeadline picks the emoji and a short Russian sentence for a status
-// transition. The very first observation of a check (prev == "") gets its
-// own wording instead of an awkward "неизвестно → X" arrow.
-func statusHeadline(prev, overall string) (emoji, headline string) {
+// statusHeadline picks the emoji and a short status sentence for a
+// transition, in the given language. The very first observation of a check
+// (prev == "") gets its own wording instead of an awkward "unknown → X"
+// arrow.
+func statusHeadline(lang, prev, overall string) (emoji, headline string) {
 	if prev == "" {
 		switch overall {
 		case "down":
-			return "🔴", "недоступен с самого первого измерения"
+			return "🔴", msg(lang, "first_down")
 		default:
-			return "🟡", "частично недоступен с самого первого измерения"
+			return "🟡", msg(lang, "first_degraded")
 		}
 	}
 	switch overall {
 	case "up":
-		return "✅", fmt.Sprintf("снова %s", statusRu(overall))
+		return "✅", fmt.Sprintf(msg(lang, "again"), statusText(lang, overall))
 	case "down":
-		return "🔴", fmt.Sprintf("стал %s", statusRu(overall))
+		return "🔴", fmt.Sprintf(msg(lang, "became"), statusText(lang, overall))
 	default:
-		return "🟡", fmt.Sprintf("стал %s", statusRu(overall))
+		return "🟡", fmt.Sprintf(msg(lang, "became"), statusText(lang, overall))
 	}
 }
 
-func statusRu(s string) string {
+func statusText(lang, s string) string {
 	switch s {
 	case "up":
-		return "работает"
+		return msg(lang, "status_up")
 	case "down":
-		return "недоступен"
+		return msg(lang, "status_down")
 	case "degraded":
-		return "частично недоступен"
+		return msg(lang, "status_degraded")
 	default:
-		return "неизвестно"
+		return msg(lang, "status_unknown")
 	}
 }
 
@@ -265,14 +279,15 @@ func (a *Aggregator) sendAgentAlert(ctx context.Context, region string, alive bo
 	}
 
 	safeRegion := html.EscapeString(region)
-	var msg string
+	lang := a.currentLang(ctx)
+	var fullMsg string
 	if alive {
-		msg = fmt.Sprintf("🔌 Агент <code>%s</code> снова на связи.", safeRegion)
+		fullMsg = fmt.Sprintf(msg(lang, "agent_back_fmt"), safeRegion)
 	} else {
-		msg = fmt.Sprintf("🔌⚠️ Агент <code>%s</code> не отвечает больше %d сек (последний раз на связи %s назад).\nЭто про сам мониторинг, не про твои сайты — регион просто перестал присылать данные.",
+		fullMsg = fmt.Sprintf(msg(lang, "agent_down_fmt"),
 			safeRegion, int(consensus.StaleAfter.Seconds()), time.Since(lastSeen).Round(time.Second))
 	}
-	if err := notifier.Send(msg); err != nil {
+	if err := notifier.Send(fullMsg); err != nil {
 		log.Printf("agent watcher: telegram send failed: %v", err)
 	}
 }

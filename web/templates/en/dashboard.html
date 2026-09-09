@@ -1,0 +1,135 @@
+{{define "dashboard.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Witness · dashboard</title>
+  {{template "head"}}
+</head>
+<body class="min-h-screen">
+  <div class="max-w-6xl mx-auto px-6 py-10">
+    <header class="flex items-center justify-between mb-8">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="dot dot-up"></span>
+          <h1 class="text-lg font-semibold">Witness</h1>
+        </div>
+        <p class="text-sm mt-1" style="color: var(--ink-dim)">multi-region monitoring with consensus</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-1">
+          <form method="post" action="/admin/settings/language">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+            <input type="hidden" name="lang" value="en" />
+            <button type="submit" class="btn-ghost text-xs" {{if eq $.Lang "en"}}style="border-color: var(--accent); color: var(--ink)"{{end}}>EN</button>
+          </form>
+          <form method="post" action="/admin/settings/language">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+            <input type="hidden" name="lang" value="ru" />
+            <button type="submit" class="btn-ghost text-xs" {{if eq $.Lang "ru"}}style="border-color: var(--accent); color: var(--ink)"{{end}}>RU</button>
+          </form>
+        </div>
+        <a href="/status" class="btn-ghost">public status page →</a>
+      </div>
+    </header>
+
+    {{if .NewToken}}
+    <div class="panel p-4 mb-6" style="border-color: var(--accent)">
+      <div class="text-sm mb-2">Agent token (save it now — it won't be shown again):</div>
+      <div class="mono text-xs break-all panel-2 p-3 rounded">{{.NewToken}}</div>
+      <div class="text-xs mt-2" style="color: var(--ink-dim)">Set it as AGENT_TOKEN in the agent config on your VPS.</div>
+    </div>
+    <script>
+      // The token was passed via ?new_token=... so the page could render it,
+      // but it has no business staying in the URL bar or browser history
+      // after that — strip it immediately without a reload.
+      history.replaceState(null, '', '/');
+    </script>
+    {{end}}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-medium" style="color: var(--ink-dim)">CHECKS</h2>
+        </div>
+        <div hx-get="/partial" hx-trigger="every 5s" hx-swap="innerHTML">
+          {{template "checks_partial.html" .}}
+        </div>
+      </div>
+
+      <div class="space-y-6">
+        <div class="panel p-5">
+          <h2 class="text-sm font-medium mb-3" style="color: var(--ink-dim)">ADD A CHECK</h2>
+          <form method="post" action="/admin/checks" class="space-y-2">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+            <input name="name" placeholder="Name (my site)" class="w-full" required />
+            <input name="target" placeholder="https://example.com or host:port" class="w-full" required />
+            <select name="type" class="w-full">
+              <option value="http">HTTP</option>
+              <option value="tcp">TCP</option>
+            </select>
+            <button type="submit" class="btn-accent w-full mt-1">Add</button>
+          </form>
+        </div>
+
+        <div class="panel p-5">
+          <h2 class="text-sm font-medium mb-3" style="color: var(--ink-dim)">REGION AGENTS</h2>
+          <div class="space-y-1 mb-3">
+            {{if not .Regions}}
+            <p class="text-xs" style="color: var(--ink-dim)">No agent has connected yet.</p>
+            {{end}}
+            {{range .Regions}}
+            <div class="mono text-xs flex items-center justify-between gap-2" style="color: var(--ink-dim)">
+              <span class="flex items-center gap-2 min-w-0 truncate">
+                <span class="dot {{if .Stale}}dot-unknown{{else}}dot-up{{end}} shrink-0"></span>
+                <span class="truncate">{{.Name}}{{if not .Seen}} · waiting for first check-in{{else if .Stale}} · no data{{end}}</span>
+              </span>
+              <form method="post" action="/admin/regions/revoke" onsubmit="return confirm('Revoke region {{.Name}}? The token will stop working immediately.')">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+                <input type="hidden" name="region" value="{{.Name}}" />
+                <button type="submit" class="text-xs shrink-0" style="color: var(--down)" title="Revoke token">revoke</button>
+              </form>
+            </div>
+            {{end}}
+          </div>
+          <form method="post" action="/admin/regions" class="space-y-2">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+            <input name="region" placeholder="frankfurt" class="w-full" required />
+            <button type="submit" class="btn-ghost w-full">Generate token</button>
+          </form>
+        </div>
+
+        <div class="panel p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-medium" style="color: var(--ink-dim)">TELEGRAM ALERTS</h2>
+            {{if .TelegramSet}}
+            <span class="text-xs" style="color: var(--up)">● configured</span>
+            {{else}}
+            <span class="text-xs" style="color: var(--ink-dim)">● not configured</span>
+            {{end}}
+          </div>
+
+          {{if eq .TelegramTest "ok"}}
+          <div class="text-xs mb-3 p-2 rounded" style="background: rgba(47,191,113,0.1); color: var(--up)">Test message sent — check Telegram.</div>
+          {{else if eq .TelegramTest "failed"}}
+          <div class="text-xs mb-3 p-2 rounded" style="background: rgba(229,72,77,0.1); color: var(--down)">Failed to send. Check the bot token and chat_id.</div>
+          {{else if eq .TelegramTest "not_configured"}}
+          <div class="text-xs mb-3 p-2 rounded" style="background: rgba(224,165,44,0.1); color: var(--degraded)">Save the token and chat_id first.</div>
+          {{end}}
+
+          <form method="post" action="/admin/settings/telegram" class="space-y-2 mb-2">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+            <input name="bot_token" placeholder="{{if .TelegramSet}}token saved — enter a new one to replace it{{else}}bot token (from @BotFather){{end}}" class="w-full mono text-xs" />
+            <input name="chat_id" placeholder="chat_id (from @userinfobot)" class="w-full mono text-xs" />
+            <button type="submit" class="btn-ghost w-full">Save</button>
+          </form>
+          <form method="post" action="/admin/settings/telegram/test">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
+            <button type="submit" class="btn-ghost w-full text-xs">Send test message</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}

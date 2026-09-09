@@ -27,6 +27,7 @@ services:
     environment:
       REDIS_ADDR: redis:6379
       ADMIN_USER: admin
+      # UI_LANG: "ru"   # defaults to "en" if unset
       ADMIN_PASSWORD: changeme
       SEED_AGENT_TOKENS: "frankfurt-demo:demo-token-fra,singapore-demo:demo-token-sin,ny-demo:demo-token-ny"
       SEED_DEMO_CHECKS: "1"

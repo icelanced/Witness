@@ -87,6 +87,14 @@ over HTTPS. No inbound ports need to be open on the agent's VPS.
 Repeat for 2-3 regions. Three is the sweet spot: enough for consensus to mean
 something, cheap enough to not think about the bill.
 
+## Language
+
+The dashboard has an EN/RU toggle in the header — switching it takes effect
+immediately for the dashboard, the public status page, and Telegram alert
+text, with no restart needed (the choice is stored in Redis). `UI_LANG` in
+`.env` only sets the *initial* default before anyone's toggled it from the
+UI.
+
 ## Alerts
 
 Open the dashboard → "Telegram-алерты" → paste your bot token (from

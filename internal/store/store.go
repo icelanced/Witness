@@ -190,7 +190,8 @@ func (s *Store) PublishResult(ctx context.Context, r models.Result) error {
 	}
 	// Cap the stream at ~10k entries (approximate trim, cheap) so it can't
 	// grow forever — XAck only marks a message processed in the consumer
-	// group, it never removes it from the stream itself.
+	// group, it never removes it from the stream itself. 10k is generous
+	// headroom even if the aggregator falls behind for a while.
 	return s.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: StreamResults,
 		MaxLen: 10000,
