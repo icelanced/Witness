@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net"
@@ -60,6 +61,7 @@ func main() {
 
 	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
 		"barColor": barColor,
+		"dayLabel": dayLabel,
 	}).ParseGlob("web/templates/*.html"))
 
 	s := &server{st: st, tmpl: tmpl, adminUser: adminUser, adminPass: adminPass, limiter: newRateLimiter()}
@@ -527,6 +529,20 @@ func barColor(pct float64) string {
 		return "bar-degraded"
 	default:
 		return "bar-down"
+	}
+}
+
+// dayLabel turns a bar's index in the DailyBars slice (oldest first, today
+// last) into a short human label for the hover tooltip.
+func dayLabel(index, total int) string {
+	daysAgo := total - 1 - index
+	switch daysAgo {
+	case 0:
+		return "Today"
+	case 1:
+		return "Yesterday"
+	default:
+		return fmt.Sprintf("%d days ago", daysAgo)
 	}
 }
 

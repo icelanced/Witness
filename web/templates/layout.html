@@ -47,7 +47,7 @@
     border: 1px solid var(--border);
     color: var(--ink);
     border-radius: 6px;
-    padding: 0.45rem 0.65rem;
+    padding: 0.4rem 0.6rem;
     font-size: 0.875rem;
   }
   input::placeholder { color: var(--ink-dim); }
@@ -56,7 +56,7 @@
     color: #06201e;
     font-weight: 600;
     border-radius: 6px;
-    padding: 0.5rem 0.9rem;
+    padding: 0.45rem 0.85rem;
     font-size: 0.875rem;
     cursor: pointer;
     transition: filter 0.15s ease, transform 0.05s ease;
@@ -68,7 +68,7 @@
     background: transparent;
     color: var(--ink-dim);
     border-radius: 6px;
-    padding: 0.5rem 0.9rem;
+    padding: 0.45rem 0.85rem;
     font-size: 0.875rem;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
@@ -98,6 +98,27 @@
     border-color: var(--down);
     color: var(--down);
   }
+  .tip { position: relative; }
+  .tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
+    z-index: 20;
+  }
+  .tip:hover::after { opacity: 1; }
 </style>
 {{end}}
 

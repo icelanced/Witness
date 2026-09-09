@@ -12,16 +12,17 @@
         <span class="font-medium">{{.Check.Name}}</span>
         <div class="flex items-center gap-1 ml-1">
           {{range .Regions}}
-          <span class="dot {{if .Stale}}dot-unknown{{else if .Up}}dot-up{{else}}dot-down{{end}}"
-                title="{{.Region}}{{if .Stale}} · no data{{else if .Up}} · up{{else}} · down{{end}}"></span>
+          <span class="dot tip {{if .Stale}}dot-unknown{{else if .Up}}dot-up{{else}}dot-down{{end}}"
+                data-tip="{{.Region}}{{if .Stale}} · no data{{else if .Up}} · up{{else}} · down{{end}}"></span>
           {{end}}
         </div>
       </div>
       <span class="text-xs mono" style="color: var(--ink-dim)">{{template "status-label" .Overall}} · {{printf "%.2f" .Uptime30d}}% over 30d</span>
     </div>
     <div class="flex items-center gap-1 overflow-x-auto pb-0.5">
-      {{range .DailyBars}}
-      <span class="bar {{barColor .}}" title="{{if lt . 0.0}}no data{{else}}{{printf "%.1f" .}}%{{end}}"></span>
+      {{$total := len .DailyBars}}
+      {{range $i, $pct := .DailyBars}}
+      <span class="bar tip {{barColor $pct}}" data-tip="{{dayLabel $i $total}}: {{if lt $pct 0.0}}no data{{else}}{{printf "%.1f" $pct}}%{{end}}"></span>
       {{end}}
     </div>
   </div>

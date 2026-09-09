@@ -6,8 +6,8 @@
   {{template "head"}}
 </head>
 <body class="min-h-screen">
-  <div class="max-w-6xl mx-auto px-6 py-10">
-    <header class="flex items-center justify-between mb-8">
+  <div class="max-w-6xl mx-auto px-6 py-6">
+    <header class="flex items-center justify-between mb-5">
       <div>
         <div class="flex items-center gap-2">
           <span class="dot dot-up"></span>
@@ -24,15 +24,9 @@
       <div class="mono text-xs break-all panel-2 p-3 rounded">{{.NewToken}}</div>
       <div class="text-xs mt-2" style="color: var(--ink-dim)">Set it as AGENT_TOKEN in the agent config on your VPS.</div>
     </div>
-    <script>
-      // The token was passed via ?new_token=... so the page could render it,
-      // but it has no business staying in the URL bar or browser history
-      // after that — strip it immediately without a reload.
-      history.replaceState(null, '', '/');
-    </script>
     {{end}}
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="lg:col-span-2">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-sm font-medium" style="color: var(--ink-dim)">CHECKS</h2>
@@ -42,9 +36,9 @@
         </div>
       </div>
 
-      <div class="space-y-6">
-        <div class="panel p-5">
-          <h2 class="text-sm font-medium mb-3" style="color: var(--ink-dim)">ADD A CHECK</h2>
+      <div class="space-y-4">
+        <div class="panel p-4">
+          <h2 class="text-sm font-medium mb-2" style="color: var(--ink-dim)">ADD A CHECK</h2>
           <form method="post" action="/admin/checks" class="space-y-2">
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}" />
             <input name="name" placeholder="Name (my site)" class="w-full" required />
@@ -57,9 +51,9 @@
           </form>
         </div>
 
-        <div class="panel p-5">
-          <h2 class="text-sm font-medium mb-3" style="color: var(--ink-dim)">REGION AGENTS</h2>
-          <div class="space-y-1 mb-3">
+        <div class="panel p-4">
+          <h2 class="text-sm font-medium mb-2" style="color: var(--ink-dim)">REGION AGENTS</h2>
+          <div class="space-y-1 mb-2">
             {{if not .Regions}}
             <p class="text-xs" style="color: var(--ink-dim)">No agent has connected yet.</p>
             {{end}}
@@ -84,8 +78,8 @@
           </form>
         </div>
 
-        <div class="panel p-5">
-          <div class="flex items-center justify-between mb-3">
+        <div class="panel p-4">
+          <div class="flex items-center justify-between mb-2">
             <h2 class="text-sm font-medium" style="color: var(--ink-dim)">TELEGRAM ALERTS</h2>
             {{if .TelegramSet}}
             <span class="text-xs" style="color: var(--up)">● configured</span>
@@ -116,6 +110,16 @@
       </div>
     </div>
   </div>
+  <script>
+    // Flash-message query params (?new_token=..., ?telegram_test=...) exist
+    // only so this page can render a one-time message — they have no
+    // business persisting in the URL bar or browser history afterward
+    // (the token one especially: it's a secret). Strip any query string
+    // right after load, without a reload.
+    if (window.location.search) {
+      history.replaceState(null, '', window.location.pathname);
+    }
+  </script>
 </body>
 </html>
 {{end}}
