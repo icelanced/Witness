@@ -19,7 +19,7 @@
       </div>
       <span class="text-xs mono" style="color: var(--ink-dim)">{{template "status-label" .Overall}} · {{printf "%.2f" .Uptime30d}}% over 30d</span>
     </div>
-    <div class="flex items-center gap-1 overflow-x-auto pb-0.5">
+    <div class="flex items-center gap-1">
       {{$total := len .DailyBars}}
       {{range $i, $pct := .DailyBars}}
       <span class="bar tip {{barColor $pct}}" data-tip="{{dayLabel $i $total}}: {{if lt $pct 0.0}}no data{{else}}{{printf "%.1f" $pct}}%{{end}}"></span>
