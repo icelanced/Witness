@@ -39,19 +39,6 @@ func New(st *store.Store) *Aggregator {
 	}
 }
 
-// currentLang reads the live language setting from Redis (set from the
-// dashboard toggle), so a language change takes effect on the very next
-// alert without restarting the server — same pattern as the Telegram
-// token/chat_id, which are also read fresh on every send rather than
-// cached at startup.
-func (a *Aggregator) currentLang(ctx context.Context) string {
-	lang, _ := a.st.GetSetting(ctx, "ui_lang")
-	if lang != "en" && lang != "ru" {
-		return "en"
-	}
-	return lang
-}
-
 // newConsumerName gives each server process a unique identity within the
 // Redis consumer group. Without this, running two server instances (e.g.
 // for HA) would have them both claim the name "aggregator-1" — Redis would
@@ -159,24 +146,24 @@ func (a *Aggregator) sendTransitionAlert(ctx context.Context, checkID, prev, ove
 	}
 	name = html.EscapeString(name)
 
-	lang := a.currentLang(ctx)
-	emoji, headline := statusHeadline(lang, prev, overall)
+	emoji, headline := statusHeadline(prev, overall)
 
 	now := time.Now()
 	var regionLines strings.Builder
 	for _, r := range regions {
 		mark := "🟢"
-		note := msg(lang, "region_up")
+		note := "up"
 		switch {
 		case consensus.IsStale(r, now):
-			mark, note = "⚪️", msg(lang, "region_nodata")
+			mark, note = "⚪️", "no data"
 		case !r.Up:
-			mark, note = "🔴", msg(lang, "region_down")
+			mark, note = "🔴", "down"
 		}
 		fmt.Fprintf(&regionLines, "\n%s <code>%s</code> — %s", mark, html.EscapeString(r.Region), note)
 	}
 
-	fullMsg := emoji + " <b>" + name + "</b>\n" + fmt.Sprintf(msg(lang, "regions_confirm_fmt"), headline, upCount, total, regionLines.String())
+	fullMsg := fmt.Sprintf("%s <b>%s</b>\n%s (%d/%d regions confirm)%s",
+		emoji, name, headline, upCount, total, regionLines.String())
 
 	if err := notifier.Send(fullMsg); err != nil {
 		log.Printf("aggregator: telegram send failed: %v", err)
@@ -184,38 +171,24 @@ func (a *Aggregator) sendTransitionAlert(ctx context.Context, checkID, prev, ove
 }
 
 // statusHeadline picks the emoji and a short status sentence for a
-// transition, in the given language. The very first observation of a check
-// (prev == "") gets its own wording instead of an awkward "unknown → X"
-// arrow.
-func statusHeadline(lang, prev, overall string) (emoji, headline string) {
+// transition. The very first observation of a check (prev == "") gets its
+// own wording instead of an awkward "unknown → X" arrow.
+func statusHeadline(prev, overall string) (emoji, headline string) {
 	if prev == "" {
 		switch overall {
 		case "down":
-			return "🔴", msg(lang, "first_down")
+			return "🔴", "down since the very first check"
 		default:
-			return "🟡", msg(lang, "first_degraded")
+			return "🟡", "partially down since the very first check"
 		}
 	}
 	switch overall {
 	case "up":
-		return "✅", fmt.Sprintf(msg(lang, "again"), statusText(lang, overall))
+		return "✅", "is back up"
 	case "down":
-		return "🔴", fmt.Sprintf(msg(lang, "became"), statusText(lang, overall))
+		return "🔴", "is now down"
 	default:
-		return "🟡", fmt.Sprintf(msg(lang, "became"), statusText(lang, overall))
-	}
-}
-
-func statusText(lang, s string) string {
-	switch s {
-	case "up":
-		return msg(lang, "status_up")
-	case "down":
-		return msg(lang, "status_down")
-	case "degraded":
-		return msg(lang, "status_degraded")
-	default:
-		return msg(lang, "status_unknown")
+		return "🟡", "is now partially down"
 	}
 }
 
@@ -279,12 +252,11 @@ func (a *Aggregator) sendAgentAlert(ctx context.Context, region string, alive bo
 	}
 
 	safeRegion := html.EscapeString(region)
-	lang := a.currentLang(ctx)
 	var fullMsg string
 	if alive {
-		fullMsg = fmt.Sprintf(msg(lang, "agent_back_fmt"), safeRegion)
+		fullMsg = fmt.Sprintf("🔌 Agent <code>%s</code> is back online.", safeRegion)
 	} else {
-		fullMsg = fmt.Sprintf(msg(lang, "agent_down_fmt"),
+		fullMsg = fmt.Sprintf("🔌⚠️ Agent <code>%s</code> hasn't responded in over %d sec (last seen %s ago).\nThis is about your monitoring setup, not your sites — the region just stopped sending data.",
 			safeRegion, int(consensus.StaleAfter.Seconds()), time.Since(lastSeen).Round(time.Second))
 	}
 	if err := notifier.Send(fullMsg); err != nil {

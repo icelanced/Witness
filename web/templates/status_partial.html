@@ -1,7 +1,7 @@
 {{define "status_partial.html"}}
 <div id="status-list" class="space-y-3">
   {{if not .Checks}}
-  <div class="panel p-8 text-center text-sm" style="color: var(--ink-dim)">Нет активных проверок.</div>
+  <div class="panel p-8 text-center text-sm" style="color: var(--ink-dim)">No active checks.</div>
   {{end}}
 
   {{range .Checks}}
@@ -13,15 +13,15 @@
         <div class="flex items-center gap-1 ml-1">
           {{range .Regions}}
           <span class="dot {{if .Stale}}dot-unknown{{else if .Up}}dot-up{{else}}dot-down{{end}}"
-                title="{{.Region}}{{if .Stale}} · нет данных{{else if .Up}} · доступен{{else}} · недоступен{{end}}"></span>
+                title="{{.Region}}{{if .Stale}} · no data{{else if .Up}} · up{{else}} · down{{end}}"></span>
           {{end}}
         </div>
       </div>
-      <span class="text-xs mono" style="color: var(--ink-dim)">{{template "status-label" .Overall}} · {{printf "%.2f" .Uptime30d}}% за 30д</span>
+      <span class="text-xs mono" style="color: var(--ink-dim)">{{template "status-label" .Overall}} · {{printf "%.2f" .Uptime30d}}% over 30d</span>
     </div>
     <div class="flex items-center gap-1 overflow-x-auto pb-0.5">
       {{range .DailyBars}}
-      <span class="bar {{barColor .}}" title="{{if lt . 0.0}}нет данных{{else}}{{printf "%.1f" .}}%{{end}}"></span>
+      <span class="bar {{barColor .}}" title="{{if lt . 0.0}}no data{{else}}{{printf "%.1f" .}}%{{end}}"></span>
       {{end}}
     </div>
   </div>

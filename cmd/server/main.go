@@ -28,12 +28,11 @@ import (
 )
 
 type server struct {
-	st          *store.Store
-	templates   map[string]*template.Template // "en", "ru"
-	adminUser   string
-	adminPass   string
-	limiter     *rateLimiter
-	defaultLang string
+	st        *store.Store
+	tmpl      *template.Template
+	adminUser string
+	adminPass string
+	limiter   *rateLimiter
 }
 
 func main() {
@@ -41,11 +40,6 @@ func main() {
 	adminUser := getenv("ADMIN_USER", "admin")
 	adminPass := getenv("ADMIN_PASSWORD", "changeme")
 	port := getenv("PORT", "8080")
-	defaultLang := getenv("UI_LANG", "en")
-	if defaultLang != "en" && defaultLang != "ru" {
-		log.Printf("UI_LANG=%q not recognized, falling back to en", defaultLang)
-		defaultLang = "en"
-	}
 
 	st := store.New(redisAddr)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -64,24 +58,11 @@ func main() {
 	go agg.Run(ctx)
 	go agg.WatchAgents(ctx)
 
-	// Both language template sets are parsed up front so switching from the
-	// dashboard is instant — no restart, no rebuild, just a different map
-	// lookup on the next request.
-	templates := map[string]*template.Template{}
-	for _, lang := range []string{"en", "ru"} {
-		templates[lang] = template.Must(template.New("").Funcs(template.FuncMap{
-			"barColor": barColor,
-		}).ParseGlob("web/templates/" + lang + "/*.html"))
-	}
+	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
+		"barColor": barColor,
+	}).ParseGlob("web/templates/*.html"))
 
-	s := &server{
-		st:          st,
-		templates:   templates,
-		adminUser:   adminUser,
-		adminPass:   adminPass,
-		limiter:     newRateLimiter(),
-		defaultLang: defaultLang,
-	}
+	s := &server{st: st, tmpl: tmpl, adminUser: adminUser, adminPass: adminPass, limiter: newRateLimiter()}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -111,7 +92,6 @@ func main() {
 		r.Post("/admin/regions/revoke", s.handleRevokeRegion)
 		r.Post("/admin/settings/telegram", s.handleSaveTelegramSettings)
 		r.Post("/admin/settings/telegram/test", s.handleTestTelegram)
-		r.Post("/admin/settings/language", s.handleSetLanguage)
 	})
 
 	log.Printf("witness server listening on :%s", port)
@@ -315,7 +295,6 @@ func (s *server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	data.NewToken = r.URL.Query().Get("new_token")
 	data.TelegramTest = r.URL.Query().Get("telegram_test")
-	data.Lang = s.currentLang(r.Context())
 	token, _ := s.st.GetSetting(r.Context(), "telegram_bot_token")
 	chatID, _ := s.st.GetSetting(r.Context(), "telegram_chat_id")
 	data.TelegramSet = token != "" && chatID != ""
@@ -331,7 +310,7 @@ func (s *server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	})
 	data.CSRFToken = csrfToken
 
-	s.render(w, r, "dashboard.html", data)
+	s.render(w, "dashboard.html", data)
 }
 
 func (s *server) handleDashboardPartial(w http.ResponseWriter, r *http.Request) {
@@ -346,7 +325,7 @@ func (s *server) handleDashboardPartial(w http.ResponseWriter, r *http.Request) 
 	if c, err := r.Cookie("csrf_token"); err == nil {
 		data.CSRFToken = c.Value
 	}
-	s.render(w, r, "checks_partial.html", data)
+	s.render(w, "checks_partial.html", data)
 }
 
 func (s *server) handleCreateCheck(w http.ResponseWriter, r *http.Request) {
@@ -386,20 +365,6 @@ func (s *server) handleRevokeRegion(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	region := r.FormValue("region")
 	if err := s.st.RevokeRegion(r.Context(), region); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func (s *server) handleSetLanguage(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	lang := r.FormValue("lang")
-	if lang != "en" && lang != "ru" {
-		http.Error(w, "unsupported language", http.StatusBadRequest)
-		return
-	}
-	if err := s.st.SetSetting(r.Context(), "ui_lang", lang); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -449,7 +414,7 @@ func (s *server) handleStatusPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, r, "status.html", data)
+	s.render(w, "status.html", data)
 }
 
 func (s *server) handleStatusPartial(w http.ResponseWriter, r *http.Request) {
@@ -458,7 +423,7 @@ func (s *server) handleStatusPartial(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, r, "status_partial.html", data)
+	s.render(w, "status_partial.html", data)
 }
 
 // ---- shared view-model building ----
@@ -488,7 +453,6 @@ type dashboardData struct {
 	TelegramSet  bool
 	TelegramTest string // "", "ok", "failed", "not_configured"
 	CSRFToken    string
-	Lang         string // "en" or "ru", for highlighting the active toggle
 }
 
 type regionAgentView struct {
@@ -545,22 +509,10 @@ func (s *server) buildDashboardData(ctx context.Context) (dashboardData, error) 
 	return dashboardData{Checks: views, Regions: agentViews}, nil
 }
 
-// currentLang returns the instance's active language: whatever was last set
-// from the dashboard toggle (persisted in Redis so it survives restarts),
-// or the UI_LANG env var's value if the toggle has never been touched.
-func (s *server) currentLang(ctx context.Context) string {
-	lang, _ := s.st.GetSetting(ctx, "ui_lang")
-	if lang != "en" && lang != "ru" {
-		return s.defaultLang
-	}
-	return lang
-}
-
-func (s *server) render(w http.ResponseWriter, r *http.Request, name string, data interface{}) {
+func (s *server) render(w http.ResponseWriter, name string, data interface{}) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	lang := s.currentLang(r.Context())
-	if err := s.templates[lang].ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("template error (%s/%s): %v", lang, name, err)
+	if err := s.tmpl.ExecuteTemplate(w, name, data); err != nil {
+		log.Printf("template error (%s): %v", name, err)
 		http.Error(w, "render error", http.StatusInternalServerError)
 	}
 }

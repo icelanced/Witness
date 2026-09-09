@@ -1,15 +1,15 @@
 {{define "status.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <title>Статус сервисов</title>
+  <title>Service Status</title>
   {{template "head"}}
 </head>
 <body class="min-h-screen">
   <div class="max-w-3xl mx-auto px-6 py-14">
     <header class="mb-10">
-      <h1 class="text-xl font-semibold">Статус сервисов</h1>
-      <p class="text-sm mt-1" style="color: var(--ink-dim)">данные из нескольких независимых регионов, обновляется в реальном времени</p>
+      <h1 class="text-xl font-semibold">Service Status</h1>
+      <p class="text-sm mt-1" style="color: var(--ink-dim)">data from multiple independent regions, updated in real time</p>
     </header>
 
     <div hx-get="/status/partial" hx-trigger="every 10s" hx-swap="innerHTML">
@@ -17,7 +17,7 @@
     </div>
 
     <footer class="mt-12 text-xs" style="color: var(--ink-dim)">
-      работает на <span class="mono">Witness</span> — self-hosted мультирегиональный мониторинг
+      powered by <span class="mono">Witness</span> — self-hosted multi-region monitoring
     </footer>
   </div>
 </body>

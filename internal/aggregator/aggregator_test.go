@@ -41,17 +41,15 @@ func TestStatusHeadline(t *testing.T) {
 		{"degrading is a yellow warning", "up", "degraded", "🟡"},
 	}
 
-	for _, lang := range []string{"en", "ru"} {
-		for _, tt := range tests {
-			t.Run(lang+"/"+tt.name, func(t *testing.T) {
-				emoji, headline := statusHeadline(lang, tt.prev, tt.overall)
-				if emoji != tt.wantEmoji {
-					t.Errorf("emoji = %q, want %q", emoji, tt.wantEmoji)
-				}
-				if headline == "" {
-					t.Error("headline should never be empty")
-				}
-			})
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emoji, headline := statusHeadline(tt.prev, tt.overall)
+			if emoji != tt.wantEmoji {
+				t.Errorf("emoji = %q, want %q", emoji, tt.wantEmoji)
+			}
+			if headline == "" {
+				t.Error("headline should never be empty")
+			}
+		})
 	}
 }
