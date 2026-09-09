@@ -24,6 +24,9 @@
       <div class="mono text-xs break-all panel-2 p-3 rounded">{{.NewToken}}</div>
       <div class="text-xs mt-2" style="color: var(--ink-dim)">Вставь его как AGENT_TOKEN в конфиг агента на VPS.</div>
     </div>
+    <script>
+      history.replaceState(null, '', '/');
+    </script>
     {{end}}
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
