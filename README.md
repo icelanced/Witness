@@ -1,113 +1,172 @@
 # Witness
 
-[🇬🇧 English](README.md) | 🇷🇺 Русский
+🇬🇧 English | [🇷🇺 Русский](README.ru.md)
 
-Self-hosted **мультирегиональный** мониторинг доступности: ни один инцидент не считается настоящим, пока его не подтвердят несколько независимых свидетелей.
+Self-hosted, **multi-region** uptime monitoring: no outage is official until multiple independent witnesses agree on it.
 
-Большинство self-hosted мониторов (Uptime Kuma, Gatus) проверяют твой сервис с одной-единственной машины. Если у этой машины моргнула сеть — ты получаешь ложный алерт в 3 ночи. А если сервис реально недоступен только для пользователей в другом регионе — монитор с одной точкой наблюдения вообще этого не заметит.
+Most self-hosted monitors (Uptime Kuma, Gatus) check your service from a single
+machine. If that one machine has a network hiccup, you get a 3am false alarm.
+If your service is actually down only for users in another region, a
+single-vantage-point monitor won't notice at all.
 
-Witness гоняет лёгких агентов в нескольких регионах. Control plane объявляет сервис "down" только тогда, когда согласны **несколько независимых регионов** — один регион, который не согласен с остальными, показывается как **degraded**, а не down. В этом вся идея.
+Witness runs lightweight agents in several regions. The control plane only
+declares a service "down" when multiple independent regions agree — one
+disagreeing region shows as **degraded**, not down. That's the whole idea.
 
 ```mermaid
 flowchart LR
-    A1["агент<br/>Франкфурт"] -- "HTTP (bearer-токен)" --> S
-    A2["агент<br/>Сингапур"] -- "HTTP (bearer-токен)" --> S
-    A3["агент<br/>Нью-Йорк"] -- "HTTP (bearer-токен)" --> S
+    A1["agent<br/>Frankfurt"] -- "HTTP (bearer token)" --> S
+    A2["agent<br/>Singapore"] -- "HTTP (bearer token)" --> S
+    A3["agent<br/>NY"] -- "HTTP (bearer token)" --> S
 
-    S["сервер<br/>(control plane)<br/><br/>дашборд + статус-страница"] <--> R[("Redis")]
+    S["server<br/>(control plane)<br/><br/>dashboard + status page"] <--> R[("Redis")]
 ```
 
-Агенты никогда не обращаются к Redis напрямую — только к HTTP API сервера с bearer-токеном своего региона. Внутри результаты идут через **Redis Stream** с consumer group, так что приём результата (HTTP-хендлер) и его обработка (консенсус + история) разделены, и при рестарте сервера результаты не теряются на полпути.
+Agents never talk to Redis directly — only to the server's HTTP API with a
+per-region bearer token. Internally, results flow through a **Redis Stream**
+with a consumer group, so ingestion (HTTP handler) and processing
+(consensus + history) are decoupled and results survive a server restart
+without being lost mid-flight.
 
-## Быстрый старт (потрогать локально, без настройки)
+## Quick start (try it locally, zero setup)
 
 ```bash
 docker compose up --build
 ```
 
-Поднимет control plane, Redis и **три демо-агента** в локальных контейнерах (это не настоящие географические регионы — просто чтобы увидеть логику консенсуса в деле). Две демо-проверки уже предзагружены.
+This starts the control plane, Redis, and **three demo agents** running as
+local containers (not real geographic regions — just enough to see the
+consensus logic work). Two demo checks are pre-loaded.
 
-- Дашборд: http://localhost:8080 (логин `admin` / `changeme`)
-- Публичная статус-страница: http://localhost:8080/status
+- Dashboard: http://localhost:8080 (login `admin` / `changeme`)
+- Public status page: http://localhost:8080/status
 
-## В продакшн
+## Going to production
 
-### 1. Разверни control plane
+### 1. Deploy the control plane
 
-На своём VPS/сервере:
+On your own VPS/server:
 
 ```bash
 git clone https://github.com/icelanced/witness.git && cd witness
-cp .env.example .env        # укажи ADMIN_PASSWORD, опционально Telegram-алерты
+cp .env.example .env        # set ADMIN_PASSWORD, optionally Telegram alerts
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-Повесь его за reverse proxy (Caddy/nginx) ради TLS. Роут `/status` без авторизации — его и выносишь как `status.твойдомен.com`; всё остальное сидит за HTTP Basic Auth.
+Put it behind a reverse proxy (Caddy/nginx) for TLS. The `/status` route has
+no auth and is what you'd expose as `status.yourdomain.com`; everything else
+sits behind HTTP Basic Auth.
 
-### 2. Добавь проверку
+### 2. Add a check
 
-Дашборд → "Add a check" → название и цель (`https://example.com` для HTTP, `host:port` для TCP).
+Open the dashboard → "Add a check" → give it a name and a target
+(`https://example.com` for HTTP, `host:port` for TCP).
 
-### 3. Добавь регион
+### 3. Add a region
 
-Дашборд → "Region agents" → впиши имя региона (например `frankfurt`) → получишь одноразовый bearer-токен.
+Dashboard → "Region agents" → type a region name (e.g. `frankfurt`) → you get
+a one-time bearer token.
 
-### 4. Запусти агента в этом регионе
+### 4. Run an agent in that region
 
-Возьми самый дешёвый VPS в нужном регионе (Hetzner/Contabo/Vultr, ~$4/мес) и выполни:
+Spin up the cheapest VPS you can find in that region (Hetzner/Contabo/Vultr,
+~$4/mo) and run:
 
 ```bash
 docker run -d --restart=always \
-  -e SERVER_URL=https://status.твойдомен.com \
-  -e AGENT_TOKEN=<токен из шага 3> \
+  -e SERVER_URL=https://status.yourdomain.com \
+  -e AGENT_TOKEN=<token from step 3> \
   ghcr.io/icelanced/witness-agent
 ```
 
-(Либо собери `Dockerfile.agent` сам и залей в свой registry — готового образа по умолчанию нет.) Агент опрашивает сервер каждые `POLL_INTERVAL` (по умолчанию 15с) за списком проверок и шлёт результаты обратно по HTTPS. Входящие порты на VPS агента открывать не нужно.
+(Or build `Dockerfile.agent` yourself and push it to your own registry — no
+prebuilt image is published by default.) The agent polls the server every
+`POLL_INTERVAL` (default 15s) for its check list and reports results back
+over HTTPS. No inbound ports need to be open on the agent's VPS.
 
-Повтори для 2-3 регионов. Три — оптимальное число: достаточно, чтобы консенсус что-то значил, и достаточно дёшево, чтобы не думать о счёте.
+Repeat for 2-3 regions. Three is the sweet spot: enough for consensus to mean
+something, cheap enough to not think about the bill.
 
-## Алерты
+## Alerts
 
-Дашборд → "Telegram alerts" → вставь токен бота (от [@BotFather](https://t.me/BotFather)) и chat_id (от [@userinfobot](https://t.me/userinfobot)) → сохрани → жми "Send test message", чтобы убедиться, что всё настроено правильно, не дожидаясь реального инцидента. Есть три независимых типа алертов:
+Open the dashboard → "Telegram alerts" → paste your bot token (from
+[@BotFather](https://t.me/BotFather)) and your chat id (from
+[@userinfobot](https://t.me/userinfobot)) → save → hit "Send test message" to confirm it's wired up correctly before waiting for a real
+incident. There are two independent kinds of alerts:
 
-- **Алерты о статусе проверки** — консенсус-статус мониторимой цели изменился (up→down, down→degraded и т.д.). Срабатывает только на подтверждённый переход (два подряд идущих совпадающих наблюдения, чтобы отфильтровать одиночные сбои), никогда на каждый отдельный опрос, и называет, какие регионы сейчас согласны/не согласны.
-- **Алерты о здоровье агента** — конкретный *агент-наблюдатель* региона перестал отвечать дольше 90 секунд (или вернулся). Это про инфраструктуру мониторинга, а не про мониторимые сайты — полезно, потому что иначе замолчавший регион виден только серой точкой в сайдбаре дашборда.
-- **Алерты об истечении TLS-сертификата** — у мониторимой HTTPS-цели сертификат истекает меньше чем через 14 дней. Срабатывает один раз на сертификат, не на каждую проверку.
+- **Check status alerts** — a monitored target's consensus status changed
+  (up→down, down→degraded, etc). Only fires on a confirmed transition (two
+  consecutive agreeing observations, to filter single-probe flapping), never
+  on every single poll, and names which regions currently agree/disagree.
+- **Agent health alerts** — a region's *agent itself* stopped reporting for
+  more than 90 seconds (or came back). This is about the monitoring
+  infrastructure, not the monitored websites — useful because a region going
+  silent otherwise only shows up as a greyed-out dot in the dashboard
+  sidebar.
+- **TLS expiry alerts** — a monitored HTTPS target's certificate is within
+  14 days of expiring. Fires once per certificate, not on every check.
 
-## Границы проекта
+## Design scope
 
-- Хранилище — только Redis (sorted sets, хранение 30 дней). Подключи Postgres, если нужна более долгая история или структурированные отчёты по инцидентам — сейчас это осознанно не добавлено ради простоты стека, а не жёсткое ограничение.
-- Авторизация — один логин через HTTP Basic Auth, без отдельных аккаунтов на пользователя. Подходит для одного администратора; отдельные логины для нескольких людей пришлось бы делать отдельно.
-- Сервер сам по себе работает по обычному HTTP. TLS обеспечивает reverse proxy перед ним (Caddy, nginx, Traefik) — так устроено большинство Go-сервисов. Рабочий пример с Caddy и бесплатным сертификатом — в разделе "В продакшн" выше.
+- Storage is Redis-only (sorted sets, 30-day retention). Add Postgres if you
+  need longer history or structured incident reports — kept out to keep the
+  stack simple, not a hard limitation.
+- Authentication is a single HTTP Basic Auth login, not per-user accounts.
+  Fine for one operator; separate logins for multiple people would need to
+  be built.
+- The server speaks plain HTTP. TLS is handled by whatever reverse proxy
+  sits in front of it (Caddy, nginx, Traefik) — same pattern most Go web
+  services follow. See "Going to production" above for a working Caddy
+  setup with a free certificate.
 
-## Локальная разработка без Docker
+## Local development without Docker
 
 ```bash
-go run ./cmd/server   # нужны REDIS_ADDR, ADMIN_USER, ADMIN_PASSWORD
-go run ./cmd/agent    # нужны SERVER_URL, AGENT_TOKEN
+go run ./cmd/server   # needs REDIS_ADDR, ADMIN_USER, ADMIN_PASSWORD env vars
+go run ./cmd/agent    # needs SERVER_URL, AGENT_TOKEN env vars
 ```
 
-## Безопасность
+## Security
 
-Реализовано:
-- Логин админа сравнивается константным по времени способом и лимитирован по попыткам (10 неудачных попыток за 5 минут на IP, успешные запросы в лимит не считаются).
-- Все изменяющие состояние admin-действия (создание/удаление проверки, создание/отзыв региона, сохранение Telegram-настроек) требуют CSRF-токен (double-submit cookie), а не просто валидную Basic Auth сессию.
-- Токены агентов генерятся через `crypto/rand` и отзываются прямо из дашборда (Region agents → "revoke") — это же стирает последний известный статус региона на всех проверках, так что утёкший/скомпрометированный токен можно отрезать не залезая в Redis руками.
-- Имена проверок и регионов экранируются везде, где выводятся (дашборд, статус-страница, сообщения в Telegram).
+Implemented:
+- Admin login uses constant-time comparison and is rate-limited (10 failed
+  attempts per 5 minutes per IP, successful requests never count against it).
+- All state-changing admin actions (create/delete check, create/revoke
+  region, save Telegram settings) require a CSRF token (double-submit
+  cookie), not just a valid Basic Auth session.
+- Agent tokens are generated with `crypto/rand` and can be revoked from the
+  dashboard (Region agents → "revoke") — this also wipes that region's
+  last-known status from every check, so a leaked/compromised token can be
+  cut off without touching Redis by hand.
+- Check names and region names are HTML-escaped everywhere they're rendered
+  (dashboard, status page, Telegram messages).
 
-Требует ручной настройки:
-- **HTTPS.** Basic Auth креды и bearer-токены агентов передаются в открытых заголовках — без TLS (Caddy/nginx/Traefik спереди) их может прочитать кто угодно на сетевом пути. Не опционально.
-- **Продовый конфиг Redis.** `docker-compose.yml` открывает Redis на `6379` без пароля ради удобства локальной демки — не переиспользуй его в проде. `docker-compose.prod.yml` держит Redis только во внутренней docker-сети — используй именно его для чего-то реального.
-- **Непустой по умолчанию `ADMIN_PASSWORD`**, прежде чем выставлять это куда-либо наружу.
+Requires manual setup:
+- **HTTPS.** Basic Auth credentials and agent bearer tokens are sent in
+  plain headers — without TLS (Caddy/nginx/Traefik in front), anyone on the
+  network path can read them. Not optional.
+- **Production Redis config.** `docker-compose.yml` exposes Redis on `6379`
+  with no password for local demo convenience — don't reuse it in
+  production. `docker-compose.prod.yml` keeps Redis internal to the Docker
+  network; use that one for anything real.
+- **A non-default `ADMIN_PASSWORD`** before exposing this anywhere.
 
-Известное ограничение:
-- **Токены агентов не привязаны к конкретным проверкам.** По задумке каждый регион должен проверять вообще все чеки (иначе консенсус не соберётся), так что привязка токена к подмножеству проверок шла бы против самой идеи архитектуры. Что реально закрыто: отправка результата с несуществующим `check_id` отклоняется с 400 — токен нельзя использовать, чтобы залить Redis мусором или воскресить историю удалённой проверки под старым id.
+Known limitation:
+- **Agent tokens aren't scoped to specific checks.** By design, every region
+  is meant to probe every check (that's what makes consensus meaningful), so
+  scoping a token to a subset of checks would work against the architecture.
+  What *is* enforced: submitting a result for a `check_id` that doesn't
+  exist is rejected with 400, so a token can't be used to spam arbitrary
+  garbage into Redis or resurrect a deleted check's history.
 
-## Тесты
+## Tests
 
 ```bash
 go test ./...
 ```
 
-Покрывает логику консенсуса/протухания, решение "слать ли алерт при переходе" (включая гистерезис и edge case "первое измерение уже упавшее"), CSRF- и rate-limit-мидлвари, и работу store с Redis через in-memory `miniredis` — реальный Redis для прогона тестов не нужен.
+Covers the consensus/staleness logic, the alert-on-transition decision
+(including hysteresis and the "first observation is already down" edge
+case), the CSRF and rate-limiter middleware, and the store's Redis
+interactions against an in-memory `miniredis` — no real Redis needed to run
+the suite.
