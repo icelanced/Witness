@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -295,31 +297,54 @@ func (s *Store) UptimePercent(ctx context.Context, checkID string, since time.Ti
 
 // DailyBuckets returns up/down ratio per day for the last `days` days, used
 // to render the small green/red bar strip on the status page.
+//
+// This used to make one ZRangeByScore round trip per day (30 calls for a
+// 30-day window) — fine for a handful of checks, but that cost is paid on
+// every dashboard poll (every 5s) for every check, so it scales badly once
+// there are more than a few dozen. Fetching the whole window in a single
+// call and bucketing in memory turns "N days × M checks" round trips into
+// just "M checks", regardless of how many days are shown.
 func (s *Store) DailyBuckets(ctx context.Context, checkID string, days int) ([]float64, error) {
 	key := "uptime:" + checkID
 	now := time.Now()
-	out := make([]float64, days)
-	for i := 0; i < days; i++ {
-		dayStart := now.AddDate(0, 0, -i).Truncate(24 * time.Hour)
-		dayEnd := dayStart.Add(24 * time.Hour)
-		members, err := s.rdb.ZRangeByScore(ctx, key, &redis.ZRangeBy{
-			Min: fmt.Sprintf("%d", dayStart.Unix()),
-			Max: fmt.Sprintf("%d", dayEnd.Unix()),
-		}).Result()
-		if err != nil {
-			return nil, err
-		}
-		if len(members) == 0 {
-			out[days-1-i] = -1 // no data
+	windowStart := now.AddDate(0, 0, -(days - 1)).Truncate(24 * time.Hour)
+
+	members, err := s.rdb.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: fmt.Sprintf("%d", windowStart.Unix()),
+		Max: "+inf",
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	upCounts := make([]int, days)
+	totalCounts := make([]int, days)
+	for _, m := range members {
+		colon := strings.LastIndexByte(m, ':')
+		if colon < 0 {
 			continue
 		}
-		up := 0
-		for _, m := range members {
-			if len(m) > 0 && m[len(m)-1] == '1' {
-				up++
-			}
+		ts, err := strconv.ParseInt(m[:colon], 10, 64)
+		if err != nil {
+			continue
 		}
-		out[days-1-i] = float64(up) / float64(len(members)) * 100
+		dayIdx := int(time.Unix(ts, 0).Sub(windowStart).Hours() / 24)
+		if dayIdx < 0 || dayIdx >= days {
+			continue
+		}
+		totalCounts[dayIdx]++
+		if m[len(m)-1] == '1' {
+			upCounts[dayIdx]++
+		}
+	}
+
+	out := make([]float64, days)
+	for i := 0; i < days; i++ {
+		if totalCounts[i] == 0 {
+			out[i] = -1 // no data
+		} else {
+			out[i] = float64(upCounts[i]) / float64(totalCounts[i]) * 100
+		}
 	}
 	return out, nil
 }

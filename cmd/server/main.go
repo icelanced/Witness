@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -508,6 +509,14 @@ func (s *server) buildDashboardData(ctx context.Context) (dashboardData, error) 
 		})
 	}
 
+	// Broken checks matter more than healthy ones — sort so down/degraded
+	// checks float to the top instead of getting buried in a long list of
+	// green ones. Stable sort keeps insertion order within the same
+	// severity, so this doesn't reshuffle checks that share a status.
+	sort.SliceStable(views, func(i, j int) bool {
+		return severityRank(views[i].Overall) < severityRank(views[j].Overall)
+	})
+
 	return dashboardData{Checks: views, Regions: agentViews}, nil
 }
 
@@ -516,6 +525,21 @@ func (s *server) render(w http.ResponseWriter, name string, data interface{}) {
 	if err := s.tmpl.ExecuteTemplate(w, name, data); err != nil {
 		log.Printf("template error (%s): %v", name, err)
 		http.Error(w, "render error", http.StatusInternalServerError)
+	}
+}
+
+// severityRank orders check statuses worst-first, so buildDashboardData can
+// sort broken checks to the top of the list.
+func severityRank(status string) int {
+	switch status {
+	case "down":
+		return 0
+	case "degraded":
+		return 1
+	case "unknown":
+		return 2
+	default: // "up"
+		return 3
 	}
 }
 
