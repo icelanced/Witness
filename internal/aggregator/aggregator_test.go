@@ -29,6 +29,57 @@ func TestShouldAlert(t *testing.T) {
 	}
 }
 
+func TestConfirmTransition(t *testing.T) {
+	// A single flip should NOT reach the threshold with threshold=2.
+	reached, pending, count := confirmTransition("", 0, "down", 2)
+	if reached {
+		t.Fatal("first observation of a candidate should not confirm at threshold 2")
+	}
+	if pending != "down" || count != 1 {
+		t.Errorf("pending = %q/%d, want down/1", pending, count)
+	}
+
+	// A second, agreeing observation SHOULD reach the threshold.
+	reached, pending, count = confirmTransition(pending, count, "down", 2)
+	if !reached {
+		t.Fatal("second agreeing observation should confirm at threshold 2")
+	}
+	if pending != "" || count != 0 {
+		t.Errorf("pending state should reset after confirming, got %q/%d", pending, count)
+	}
+}
+
+func TestConfirmTransitionResetsOnDisagreement(t *testing.T) {
+	// Start building toward "down"...
+	_, pending, count := confirmTransition("", 0, "down", 3)
+	// ...then a single "degraded" result interrupts the run entirely,
+	// rather than adding to a mixed count — flapping between two
+	// different bad states shouldn't confirm faster than flapping between
+	// good and bad.
+	reached, pending, count := confirmTransition(pending, count, "degraded", 3)
+	if reached {
+		t.Fatal("a disagreeing observation should not confirm anything")
+	}
+	if pending != "degraded" || count != 1 {
+		t.Errorf("disagreement should restart the count on the new candidate, got %q/%d", pending, count)
+	}
+}
+
+func TestConfirmTransitionRequiresFullThreshold(t *testing.T) {
+	pending, count := "", 0
+	for i := 0; i < 4; i++ {
+		reached, p, c := confirmTransition(pending, count, "down", 5)
+		pending, count = p, c
+		if reached {
+			t.Fatalf("should not confirm before reaching threshold (confirmed early at observation %d)", i+1)
+		}
+	}
+	reached, _, _ := confirmTransition(pending, count, "down", 5)
+	if !reached {
+		t.Fatal("should confirm on the 5th consecutive agreeing observation")
+	}
+}
+
 func TestStatusHeadline(t *testing.T) {
 	tests := []struct {
 		name          string

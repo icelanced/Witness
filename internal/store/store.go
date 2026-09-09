@@ -74,6 +74,8 @@ func (s *Store) DeleteCheck(ctx context.Context, id string) error {
 	pipe := s.rdb.TxPipeline()
 	pipe.HDel(ctx, "checks", id)
 	pipe.SRem(ctx, "checks:index", id)
+	pipe.HDel(ctx, "tls_expiry", id)
+	pipe.HDel(ctx, "tls_expiry_alerted", id)
 	_, err := pipe.Exec(ctx)
 	return err
 }
@@ -167,6 +169,62 @@ func (s *Store) RegionLastSeen(ctx context.Context, region string) (time.Time, b
 		return time.Time{}, false
 	}
 	return time.Unix(ts, 0), true
+}
+
+// ---- TLS certificate expiry tracking ----
+//
+// Only the latest observed expiry per check is kept (not per region — the
+// same target normally serves the same certificate everywhere, and this is
+// an early-warning signal, not something that needs cross-region
+// consensus). A separate "already warned about this exact certificate"
+// marker keeps a renewal-due warning from repeating on every check cycle
+// until the cert is actually renewed.
+
+func (s *Store) SetTLSExpiry(ctx context.Context, checkID string, notAfter time.Time) error {
+	return s.rdb.HSet(ctx, "tls_expiry", checkID, notAfter.Unix()).Err()
+}
+
+func (s *Store) TLSExpiry(ctx context.Context, checkID string) (time.Time, bool) {
+	v, err := s.rdb.HGet(ctx, "tls_expiry", checkID).Result()
+	if err != nil {
+		return time.Time{}, false
+	}
+	var ts int64
+	if _, err := fmt.Sscanf(v, "%d", &ts); err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(ts, 0), true
+}
+
+func (s *Store) AllTLSExpiries(ctx context.Context) (map[string]time.Time, error) {
+	vals, err := s.rdb.HGetAll(ctx, "tls_expiry").Result()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]time.Time, len(vals))
+	for checkID, v := range vals {
+		var ts int64
+		if _, err := fmt.Sscanf(v, "%d", &ts); err == nil {
+			out[checkID] = time.Unix(ts, 0)
+		}
+	}
+	return out, nil
+}
+
+// WasTLSExpiryAlerted reports whether a warning has already been sent for
+// this exact certificate (identified by its NotAfter timestamp) — renewing
+// the cert changes NotAfter, which naturally re-arms the warning for the
+// new certificate's eventual expiry.
+func (s *Store) WasTLSExpiryAlerted(ctx context.Context, checkID string, notAfter time.Time) bool {
+	v, err := s.rdb.HGet(ctx, "tls_expiry_alerted", checkID).Result()
+	if err != nil {
+		return false
+	}
+	return v == fmt.Sprintf("%d", notAfter.Unix())
+}
+
+func (s *Store) MarkTLSExpiryAlerted(ctx context.Context, checkID string, notAfter time.Time) error {
+	return s.rdb.HSet(ctx, "tls_expiry_alerted", checkID, notAfter.Unix()).Err()
 }
 
 // ---- Settings (small generic key/value store, e.g. Telegram bot config) ----

@@ -21,13 +21,14 @@ type Check struct {
 
 // Result is a single probe outcome reported by one agent for one check.
 type Result struct {
-	CheckID    string    `json:"check_id"`
-	Region     string    `json:"region"`
-	Success    bool      `json:"success"`
-	LatencyMs  int64     `json:"latency_ms"`
-	StatusCode int       `json:"status_code,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
+	CheckID      string     `json:"check_id"`
+	Region       string     `json:"region"`
+	Success      bool       `json:"success"`
+	LatencyMs    int64      `json:"latency_ms"`
+	StatusCode   int        `json:"status_code,omitempty"`
+	Error        string     `json:"error,omitempty"`
+	TLSExpiresAt *time.Time `json:"tls_expires_at,omitempty"` // nil for non-HTTPS checks or if it couldn't be read
+	Timestamp    time.Time  `json:"timestamp"`
 }
 
 // RegionStatus is the last known state of a check from a specific region.

@@ -52,13 +52,24 @@ func runHTTP(ctx context.Context, c models.Check, start time.Time) models.Result
 	defer resp.Body.Close()
 
 	success := resp.StatusCode >= 200 && resp.StatusCode < 400
-	return models.Result{
+	result := models.Result{
 		CheckID:    c.ID,
 		Success:    success,
 		LatencyMs:  latency,
 		StatusCode: resp.StatusCode,
 		Timestamp:  start,
 	}
+
+	// Capture the leaf certificate's expiry so the aggregator can warn well
+	// before it actually causes an outage — "forgot to renew the cert" is a
+	// common real-world cause of downtime that a plain status-code check
+	// never sees coming.
+	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+		notAfter := resp.TLS.PeerCertificates[0].NotAfter
+		result.TLSExpiresAt = &notAfter
+	}
+
+	return result
 }
 
 func runTCP(ctx context.Context, c models.Check, start time.Time) models.Result {

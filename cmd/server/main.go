@@ -59,6 +59,7 @@ func main() {
 	agg := aggregator.New(st)
 	go agg.Run(ctx)
 	go agg.WatchAgents(ctx)
+	go agg.WatchTLSExpiry(ctx)
 
 	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
 		"barColor": barColor,
@@ -283,6 +284,9 @@ func (s *server) handleSubmitResult(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.PublishResult(r.Context(), res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if res.TLSExpiresAt != nil {
+		s.st.SetTLSExpiry(r.Context(), res.CheckID, *res.TLSExpiresAt)
 	}
 	s.st.TouchRegionLastSeen(r.Context(), region, res.Timestamp)
 	w.WriteHeader(http.StatusAccepted)
