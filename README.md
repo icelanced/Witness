@@ -59,12 +59,12 @@ sits behind HTTP Basic Auth.
 
 ### 2. Add a check
 
-Open the dashboard → "Добавить проверку" → give it a name and a target
+Open the dashboard → "Add a check" → give it a name and a target
 (`https://example.com` for HTTP, `host:port` for TCP).
 
 ### 3. Add a region
 
-Dashboard → "Регионы-агенты" → type a region name (e.g. `frankfurt`) → you get
+Dashboard → "Region agents" → type a region name (e.g. `frankfurt`) → you get
 a one-time bearer token.
 
 ### 4. Run an agent in that region
@@ -89,10 +89,9 @@ something, cheap enough to not think about the bill.
 
 ## Alerts
 
-Open the dashboard → "Telegram-алерты" → paste your bot token (from
+Open the dashboard → "Telegram alerts" → paste your bot token (from
 [@BotFather](https://t.me/BotFather)) and your chat id (from
-[@userinfobot](https://t.me/userinfobot)) → save → hit "Отправить тестовое
-сообщение" to confirm it's wired up correctly before waiting for a real
+[@userinfobot](https://t.me/userinfobot)) → save → hit "Send test message" to confirm it's wired up correctly before waiting for a real
 incident. There are two independent kinds of alerts:
 
 - **Check status alerts** — a monitored target's consensus status changed
@@ -104,14 +103,18 @@ incident. There are two independent kinds of alerts:
   silent otherwise only shows up as a greyed-out dot in the dashboard
   sidebar, which nobody's staring at.
 
-## What's intentionally not here (yet)
+## Design scope
 
-- Long-term storage is Redis-only (sorted sets, 30-day trim). Fine for a
-  pet project; swap in Postgres if you need longer retention or complex
-  incident reports.
-- No multi-user auth — it's single Basic Auth login, matching the
-  "one operator, self-hosted" scope of the project.
-- No HTTPS termination built in — put it behind Caddy/nginx/Traefik.
+- Storage is Redis-only (sorted sets, 30-day retention). Add Postgres if you
+  need longer history or structured incident reports — kept out to keep the
+  stack simple, not a hard limitation.
+- Authentication is a single HTTP Basic Auth login, not per-user accounts.
+  Fine for one operator; separate logins for multiple people would need to
+  be built.
+- The server speaks plain HTTP. TLS is handled by whatever reverse proxy
+  sits in front of it (Caddy, nginx, Traefik) — same pattern most Go web
+  services follow. See "Going to production" above for a working Caddy
+  setup with a free certificate.
 
 ## Local development without Docker
 
@@ -129,7 +132,7 @@ What's covered:
   region, save Telegram settings) require a CSRF token (double-submit
   cookie), not just a valid Basic Auth session.
 - Agent tokens are generated with `crypto/rand` and can be revoked from the
-  dashboard (Регионы-агенты → "отозвать") — this also wipes that region's
+  dashboard (Region agents → "revoke") — this also wipes that region's
   last-known status from every check, so a leaked/compromised token can be
   cut off without touching Redis by hand.
 - Check names and region names are HTML-escaped everywhere they're rendered
