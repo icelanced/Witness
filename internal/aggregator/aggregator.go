@@ -149,9 +149,21 @@ func (a *Aggregator) handleResult(ctx context.Context, r models.Result) {
 	}
 	a.mu.Unlock()
 
-	if confirmed && shouldAlert(prev, overall) {
+	if confirmed && shouldAlert(prev, overall) && !a.isCheckMuted(ctx, r.CheckID) {
 		a.sendTransitionAlert(ctx, r.CheckID, prev, overall, regions, upCount, total)
 	}
+}
+
+// isCheckMuted still lets status transitions get confirmed and tracked
+// internally (so un-muting later doesn't trigger a flood of "catch up"
+// alerts for changes that happened while muted) — it only gates the
+// actual Telegram send.
+func (a *Aggregator) isCheckMuted(ctx context.Context, checkID string) bool {
+	c, err := a.st.GetCheck(ctx, checkID)
+	if err != nil || c == nil {
+		return false
+	}
+	return c.Muted
 }
 
 // confirmTransition applies the hysteresis rule to one incoming candidate

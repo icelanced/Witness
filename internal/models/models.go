@@ -17,6 +17,7 @@ type Check struct {
 	Type     CheckType `json:"type"`
 	Target   string    `json:"target"`   // URL for http, host:port for tcp
 	Interval int       `json:"interval"` // seconds
+	Muted    bool      `json:"muted"`    // true: keep monitoring, but never send Telegram alerts
 }
 
 // Result is a single probe outcome reported by one agent for one check.

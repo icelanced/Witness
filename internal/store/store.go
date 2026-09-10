@@ -95,6 +95,21 @@ func (s *Store) GetCheck(ctx context.Context, id string) (*models.Check, error) 
 	return &c, nil
 }
 
+// SetCheckMuted flips whether Telegram alerts fire for this check. The
+// check keeps being monitored and its history keeps recording either way —
+// muting only silences the notification, not the monitoring itself.
+func (s *Store) SetCheckMuted(ctx context.Context, id string, muted bool) error {
+	c, err := s.GetCheck(ctx, id)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		return fmt.Errorf("check %s not found", id)
+	}
+	c.Muted = muted
+	return s.SaveCheck(ctx, *c)
+}
+
 // ---- Agent tokens ----
 
 // RegisterAgentToken maps a bearer token to a region name so agents can

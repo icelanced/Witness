@@ -95,16 +95,13 @@ Open the dashboard → "Telegram alerts" → paste your bot token (from
 incident. There are two independent kinds of alerts:
 
 - **Check status alerts** — a monitored target's consensus status changed
-  (up→down, down→degraded, etc). Only fires on a confirmed transition (two
-  consecutive agreeing observations, to filter single-probe flapping), never
+  (up→down, down→degraded, etc). Only fires on a genuine transition, never
   on every single poll, and names which regions currently agree/disagree.
 - **Agent health alerts** — a region's *agent itself* stopped reporting for
-  more than 90 seconds (or came back). This is about the monitoring
-  infrastructure, not the monitored websites — useful because a region going
+  more than 90 seconds (or came back). This is about your monitoring
+  infrastructure, not about your websites — useful because a region going
   silent otherwise only shows up as a greyed-out dot in the dashboard
-  sidebar.
-- **TLS expiry alerts** — a monitored HTTPS target's certificate is within
-  14 days of expiring. Fires once per certificate, not on every check.
+  sidebar, which nobody's staring at.
 
 ## Design scope
 
@@ -142,22 +139,20 @@ Implemented:
   (dashboard, status page, Telegram messages).
 
 Requires manual setup:
-- **HTTPS.** Basic Auth credentials and agent bearer tokens are sent in
-  plain headers — without TLS (Caddy/nginx/Traefik in front), anyone on the
-  network path can read them. Not optional.
-- **Production Redis config.** `docker-compose.yml` exposes Redis on `6379`
-  with no password for local demo convenience — don't reuse it in
-  production. `docker-compose.prod.yml` keeps Redis internal to the Docker
-  network; use that one for anything real.
-- **A non-default `ADMIN_PASSWORD`** before exposing this anywhere.
-
-Known limitation:
+- **Put this behind HTTPS.** Basic Auth credentials and agent bearer tokens
+  are sent in plain headers — without TLS (Caddy/nginx/Traefik in front),
+  anyone on the network path can read them. This isn't optional.
+- **Don't reuse `docker-compose.yml` for production.** It exposes Redis on
+  `6379` with no password for local demo convenience.
+  `docker-compose.prod.yml` keeps Redis internal to the Docker network —
+  use that one for anything real.
 - **Agent tokens aren't scoped to specific checks.** By design, every region
   is meant to probe every check (that's what makes consensus meaningful), so
   scoping a token to a subset of checks would work against the architecture.
   What *is* enforced: submitting a result for a `check_id` that doesn't
   exist is rejected with 400, so a token can't be used to spam arbitrary
   garbage into Redis or resurrect a deleted check's history.
+- Change `ADMIN_PASSWORD` from the default before exposing this anywhere.
 
 ## Tests
 
@@ -166,7 +161,6 @@ go test ./...
 ```
 
 Covers the consensus/staleness logic, the alert-on-transition decision
-(including hysteresis and the "first observation is already down" edge
-case), the CSRF and rate-limiter middleware, and the store's Redis
-interactions against an in-memory `miniredis` — no real Redis needed to run
-the suite.
+(including the "first observation is already down" edge case), the CSRF
+and rate-limiter middleware, and the store's Redis interactions against an
+in-memory `miniredis` — no real Redis needed to run the suite.

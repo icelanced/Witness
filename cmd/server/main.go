@@ -92,6 +92,7 @@ func main() {
 		r.Get("/partial", s.handleDashboardPartial)
 		r.Post("/admin/checks", s.handleCreateCheck)
 		r.Post("/admin/checks/{id}/delete", s.handleDeleteCheck)
+		r.Post("/admin/checks/{id}/toggle-mute", s.handleToggleMute)
 		r.Post("/admin/regions", s.handleCreateRegion)
 		r.Post("/admin/regions/revoke", s.handleRevokeRegion)
 		r.Post("/admin/settings/telegram", s.handleSaveTelegramSettings)
@@ -354,6 +355,20 @@ func (s *server) handleCreateCheck(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleDeleteCheck(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	s.st.DeleteCheck(r.Context(), id)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *server) handleToggleMute(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, err := s.st.GetCheck(r.Context(), id)
+	if err != nil || c == nil {
+		http.Error(w, "check not found", http.StatusNotFound)
+		return
+	}
+	if err := s.st.SetCheckMuted(r.Context(), id, !c.Muted); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
